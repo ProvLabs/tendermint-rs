@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::serializers;
 
 /// An event that occurred while processing a request.
 ///
@@ -22,6 +23,8 @@ pub struct Event {
     pub kind: String,
 
     /// A list of [`EventAttribute`]s describing the event.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(deserialize_with = "serializers::nullable::deserialize")]
     pub attributes: Vec<EventAttribute>,
 }
 
