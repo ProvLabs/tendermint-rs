@@ -318,7 +318,7 @@ peg::parser! {
             = t:tag() __ "EXISTS" { Condition::exists(t.to_owned()) }
 
         rule event_type() -> Term
-            = "tm.event" _ "=" _ "'" et:$("NewBlock" / "Tx") "'" {
+            = "tm.event" _ "=" _ "'" et:$("NewBlock" / "Tx" / "Vote" / "Bad") "'" {
                 Term::EventType(EventType::from_str(et).unwrap())
             }
 
@@ -397,6 +397,8 @@ where
 pub enum EventType {
     NewBlock,
     Tx,
+    Vote,
+    Bad,
 }
 
 impl fmt::Display for EventType {
@@ -404,6 +406,8 @@ impl fmt::Display for EventType {
         match self {
             EventType::NewBlock => write!(f, "NewBlock"),
             EventType::Tx => write!(f, "Tx"),
+            EventType::Vote => write!(f, "Vote"),
+            EventType::Bad => write!(f, "Bad"),
         }
     }
 }
@@ -415,6 +419,8 @@ impl FromStr for EventType {
         match s {
             "NewBlock" => Ok(Self::NewBlock),
             "Tx" => Ok(Self::Tx),
+            "Vote" => Ok(Self::Vote),
+            "Bad" => Ok(Self::Bad),
             invalid => Err(Error::unrecognized_event_type(invalid.to_string())),
         }
     }
@@ -678,6 +684,9 @@ mod test {
 
         let query = Query::from(EventType::Tx);
         assert_eq!("tm.event = 'Tx'", query.to_string());
+
+        let query = Query::from(EventType::Vote);
+        assert_eq!("tm.event = 'Vote'", query.to_string());
     }
 
     #[test]
@@ -768,6 +777,9 @@ mod test {
         assert!(query.conditions.is_empty());
         let query = Query::from_str("tm.event='NewBlock'").unwrap();
         assert_eq!(query.event_type, Some(EventType::NewBlock));
+        assert!(query.conditions.is_empty());
+        let query = Query::from_str("tm.event='Vote'").unwrap();
+        assert_eq!(query.event_type, Some(EventType::Vote));
         assert!(query.conditions.is_empty());
 
         // One event type, with whitespace

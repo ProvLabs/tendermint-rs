@@ -2,7 +2,7 @@
 
 use alloc::collections::BTreeMap as HashMap;
 
-use tendermint::{abci, block, Block};
+use tendermint::{abci, block, Block, Time};
 
 use crate::{prelude::*, query::EventType};
 
@@ -27,6 +27,7 @@ impl Event {
         match self.data {
             EventData::NewBlock { .. } => Some(EventType::NewBlock),
             EventData::Tx { .. } => Some(EventType::Tx),
+            EventData::Vote { .. } => Some(EventType::Vote),
             _ => None,
         }
     }
@@ -53,7 +54,24 @@ pub enum EventData {
     Tx {
         tx_result: TxInfo,
     },
+    Vote {
+        inner: InnerVote,
+    },
     GenericJsonEvent(serde_json::Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InnerVote {
+    pub r#type: i32,
+    pub height: i64,
+    pub round: i32,
+    // pub block_id: Option<BlockId>,
+    pub timestamp: Time,
+    pub validator_address: Vec<u8>,
+    pub validator_index: i32,
+    pub signature: Vec<u8>,
+    // pub extension: Option<Vec<u8>>,
+    // pub extension_signature: Option<Vec<u8>>,
 }
 
 /// Transaction result info.
@@ -76,13 +94,13 @@ pub struct TxResult {
 
 /// Serialization helpers for CometBFT 0.34 RPC
 pub mod v0_34 {
-    use super::{Event, EventData, TxInfo, TxResult};
+    use super::{Event, EventData, InnerVote, TxInfo, TxResult};
     use crate::dialect::v0_34::Event as RpcEvent;
     use crate::prelude::*;
     use crate::{dialect, serializers, Response};
     use alloc::collections::BTreeMap as HashMap;
     use serde::{Deserialize, Serialize};
-    use tendermint::Block;
+    use tendermint::{Block, Time};
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct DialectEvent {
@@ -134,6 +152,11 @@ pub mod v0_34 {
             #[serde(rename = "TxResult")]
             tx_result: DialectTxInfo,
         },
+        #[serde(alias = "tendermint/event/Vote")]
+        Vote {
+            #[serde(rename = "Vote")]
+            inner: DialectInnerVote,
+        },
         GenericJsonEvent(serde_json::Value),
     }
 
@@ -151,6 +174,9 @@ pub mod v0_34 {
                 },
                 DialectEventData::Tx { tx_result } => EventData::Tx {
                     tx_result: tx_result.into(),
+                },
+                DialectEventData::Vote { inner } => EventData::Vote {
+                    inner: inner.into(),
                 },
                 DialectEventData::GenericJsonEvent(v) => EventData::GenericJsonEvent(v),
             }
@@ -183,7 +209,52 @@ pub mod v0_34 {
                 EventData::Tx { tx_result } => DialectEventData::Tx {
                     tx_result: tx_result.into(),
                 },
+                EventData::Vote { inner } => DialectEventData::Vote {
+                    inner: inner.into(),
+                },
                 EventData::GenericJsonEvent(v) => DialectEventData::GenericJsonEvent(v),
+            }
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct DialectInnerVote {
+        pub r#type: i32,
+        #[serde(with = "serializers::from_str")]
+        pub height: i64,
+        pub round: i32,
+        pub timestamp: Time,
+        #[serde(with = "serializers::bytes::hexstring")]
+        pub validator_address: Vec<u8>,
+        pub validator_index: i32,
+        #[serde(with = "serializers::bytes::base64string")]
+        pub signature: Vec<u8>,
+    }
+
+    impl From<DialectInnerVote> for InnerVote {
+        fn from(value: DialectInnerVote) -> Self {
+            InnerVote {
+                r#type: value.r#type,
+                height: value.height,
+                round: value.round,
+                timestamp: value.timestamp,
+                validator_address: value.validator_address,
+                validator_index: value.validator_index,
+                signature: value.signature,
+            }
+        }
+    }
+
+    impl From<InnerVote> for DialectInnerVote {
+        fn from(value: InnerVote) -> Self {
+            DialectInnerVote {
+                r#type: value.r#type,
+                height: value.height,
+                round: value.round,
+                timestamp: value.timestamp,
+                validator_address: value.validator_address,
+                validator_index: value.validator_index,
+                signature: value.signature,
             }
         }
     }
@@ -253,13 +324,13 @@ pub mod v0_34 {
 
 /// Shared serialization/deserialization helpers for the RPC protocol used since CometBFT 0.37
 mod latest {
-    use super::{Event, EventData, TxInfo, TxResult};
+    use super::{Event, EventData, InnerVote, TxInfo, TxResult};
     use crate::prelude::*;
     use crate::{serializers, Response};
     use alloc::collections::BTreeMap as HashMap;
     use serde::{Deserialize, Serialize};
     use tendermint::abci::Event as RpcEvent;
-    use tendermint::{abci, block, Block};
+    use tendermint::{abci, block, Block, Time};
 
     #[derive(Deserialize, Debug)]
     pub struct DeEvent {
@@ -305,6 +376,11 @@ mod latest {
             #[serde(rename = "TxResult")]
             tx_result: DialectTxInfo,
         },
+        #[serde(alias = "tendermint/event/Vote")]
+        Vote {
+            #[serde(rename = "Vote")]
+            inner: DialectInnerVote,
+        },
         GenericJsonEvent(serde_json::Value),
     }
 
@@ -336,7 +412,52 @@ mod latest {
                 DeEventData::Tx { tx_result } => EventData::Tx {
                     tx_result: tx_result.into(),
                 },
+                DeEventData::Vote { inner } => EventData::Vote {
+                    inner: inner.into(),
+                },
                 DeEventData::GenericJsonEvent(v) => EventData::GenericJsonEvent(v),
+            }
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct DialectInnerVote {
+        pub r#type: i32,
+        #[serde(with = "serializers::from_str")]
+        pub height: i64,
+        pub round: i32,
+        pub timestamp: Time,
+        #[serde(with = "serializers::bytes::hexstring")]
+        pub validator_address: Vec<u8>,
+        pub validator_index: i32,
+        #[serde(with = "serializers::bytes::base64string")]
+        pub signature: Vec<u8>,
+    }
+
+    impl From<DialectInnerVote> for InnerVote {
+        fn from(value: DialectInnerVote) -> Self {
+            InnerVote {
+                r#type: value.r#type,
+                height: value.height,
+                round: value.round,
+                timestamp: value.timestamp,
+                validator_address: value.validator_address,
+                validator_index: value.validator_index,
+                signature: value.signature,
+            }
+        }
+    }
+
+    impl From<InnerVote> for DialectInnerVote {
+        fn from(value: InnerVote) -> Self {
+            DialectInnerVote {
+                r#type: value.r#type,
+                height: value.height,
+                round: value.round,
+                timestamp: value.timestamp,
+                validator_address: value.validator_address,
+                validator_index: value.validator_index,
+                signature: value.signature,
             }
         }
     }
@@ -448,6 +569,11 @@ pub mod v0_37 {
             #[serde(rename = "TxResult")]
             tx_result: DialectTxInfo,
         },
+        #[serde(alias = "tendermint/event/Vote")]
+        Vote {
+            #[serde(rename = "Vote")]
+            inner: DialectInnerVote,
+        },
         GenericJsonEvent(serde_json::Value),
     }
 
@@ -476,6 +602,9 @@ pub mod v0_37 {
                 },
                 EventData::Tx { tx_result } => SerEventData::Tx {
                     tx_result: tx_result.into(),
+                },
+                EventData::Vote { inner } => SerEventData::Vote {
+                    inner: inner.into(),
                 },
                 EventData::GenericJsonEvent(v) => SerEventData::GenericJsonEvent(v),
             }
@@ -527,6 +656,11 @@ pub mod v0_38 {
             #[serde(rename = "TxResult")]
             tx_result: DialectTxInfo,
         },
+        #[serde(alias = "tendermint/event/Vote")]
+        Vote {
+            #[serde(rename = "Vote")]
+            inner: DialectInnerVote,
+        },
         GenericJsonEvent(serde_json::Value),
     }
 
@@ -555,6 +689,9 @@ pub mod v0_38 {
                 },
                 EventData::Tx { tx_result } => SerEventData::Tx {
                     tx_result: tx_result.into(),
+                },
+                EventData::Vote { inner } => SerEventData::Vote {
+                    inner: inner.into(),
                 },
                 EventData::GenericJsonEvent(v) => SerEventData::GenericJsonEvent(v),
             }
