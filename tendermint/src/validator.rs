@@ -1,6 +1,6 @@
 //! Tendermint validators
 
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 use tendermint_proto::v0_38::types::{
     SimpleValidator as RawSimpleValidator, ValidatorSet as RawValidatorSet,
 };
@@ -161,7 +161,7 @@ pub struct Info {
     pub name: Option<String>,
 
     /// Validator proposer priority
-    #[serde(skip)]
+    #[serde(default)]
     pub proposer_priority: ProposerPriority,
 }
 
@@ -246,6 +246,22 @@ impl ProposerPriority {
     /// Get the current proposer priority
     pub fn value(self) -> i64 {
         self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for ProposerPriority {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(ProposerPriority(
+            String::deserialize(deserializer)?
+                .parse()
+                .map_err(|e| D::Error::custom(format!("{}", e)))?,
+        ))
+    }
+}
+
+impl Serialize for ProposerPriority {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.to_string().serialize(serializer)
     }
 }
 
